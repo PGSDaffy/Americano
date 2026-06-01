@@ -15,7 +15,7 @@ void cover_free(set_family *F);
 // 深拷贝
 set_family *cover_dup(set_family *F);
 
-// 释放 cover 但不释放里面的 cube 数据（给别人用了）
+// 释放 cover 但不释放里面的 cube 数据（给别人用）
 void cover_free_data(set_family *F);
 
 #endif
