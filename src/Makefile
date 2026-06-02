@@ -4,7 +4,7 @@ CC       = gcc
 CFLAGS   = -Wall -Wextra -std=c99 -O2
 TARGET   = ../bin/americano
 
-SRCS = main.c set.c cover.c
+SRCS = main.c set.c cover.c pla_read.c
 OBJS = $(SRCS:.c=.o)
 
 .PHONY: all clean run
