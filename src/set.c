@@ -48,7 +48,6 @@ int set_implies(pset a, pset b, int nwords)
 
 int set_disjoint(pset a, pset b, int nwords)
 {
-    // 有任一位同时为 1 就不算 disjoint
     for (int i = 0; i < nwords; i++)
         if (a[i] & b[i])
             return 0;

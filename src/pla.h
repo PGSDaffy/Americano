@@ -11,6 +11,7 @@ typedef struct
 } pla_t;
 
 pla_t *pla_read(const char *filename);
+void pla_write(const pla_t *p, FILE *out);
 void pla_free(pla_t *p);
 
 #endif
