@@ -11,6 +11,6 @@ set_family *compute_off_set(set_family *F, int nvars);
 // 三个核心步骤
 set_family *expand(set_family *F, set_family *R, int nin);
 set_family *irredundant(set_family *F, set_family *R);
-set_family *reduce(set_family *F, set_family *R);
+set_family *reduce(set_family *F, set_family *R, int nin);
 
 #endif
