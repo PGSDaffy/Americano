@@ -13,9 +13,7 @@ set_family *cover_new(int nwords, int capacity)
 
 set_family *cover_add(set_family *F, pset cube)
 {
-    // 满了就扩容
-    if (F->count >= F->capacity)
-    {
+    if (F->count >= F->capacity) {
         F->capacity *= 2;
         F->data = realloc(F->data,
                           F->wsize * F->capacity * sizeof(unsigned int));
@@ -38,9 +36,4 @@ set_family *cover_dup(set_family *F)
     memcpy(N->data, F->data,
            F->wsize * F->count * sizeof(unsigned int));
     return N;
-}
-
-void cover_free_data(set_family *F)
-{
-    free(F);
 }

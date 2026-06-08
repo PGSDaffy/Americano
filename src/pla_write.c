@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "pla.h"
 
 // 解码一个变量：01→'0', 10→'1', 11→'-'

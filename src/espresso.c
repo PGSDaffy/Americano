@@ -157,7 +157,6 @@ set_family *reduce(set_family *F, set_family *R, int nin)
     set_family *result = cover_dup(F);
 
     pset p, last;
-    int idx = 0;
     foreach_set(result, last, p)
     {
         unsigned int buf[nwords];
@@ -233,7 +232,6 @@ set_family *reduce(set_family *F, set_family *R, int nin)
         }
 
         set_copy(p, buf, nwords);
-        idx++;
     }
 
     cover_free(F_save);

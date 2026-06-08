@@ -1,6 +1,7 @@
-#include "pla.h"
+#include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include "pla.h"
 
 #define MAX_LINE 4096
 
@@ -85,10 +86,8 @@ pla_t *pla_read(const char *filename)
             nin = atoi(line + 2);
         else if (line[0] == '.' && line[1] == 'o')
             nout = atoi(line + 2);
-        else if (line[0] == '.' && line[1] != 'i' && line[1] != 'o')
-            continue; // 跳过 .p .e 等关键字
-        else if (nin > 0 && nout > 0)
-            nterms++; // 数据行
+        else if (line[0] != '.')
+            nterms++;
     }
 
     if (nin == 0 || nout == 0)
