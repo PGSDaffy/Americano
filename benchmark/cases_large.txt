@@ -1,0 +1,3 @@
+/home/mxf/Desktop/EDA/CODE/espresso-logic/examples/risc
+/home/mxf/Desktop/EDA/CODE/espresso-logic/examples/dk17
+/home/mxf/Desktop/EDA/CODE/espresso-logic/examples/alu1

@@ -1,0 +1,7 @@
+test_5var.pla
+test_large1.pla
+test_large2.pla
+test_large3.pla
+test_large4.pla
+test_large5.pla
+test_xor3.pla

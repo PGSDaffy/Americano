@@ -1,0 +1,4 @@
+simple_xor.pla
+test_simple.pla
+test_or.pla
+test_abc.pla

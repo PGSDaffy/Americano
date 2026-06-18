@@ -13,7 +13,8 @@ set_family *cover_new(int nwords, int capacity)
 
 set_family *cover_add(set_family *F, pset cube)
 {
-    if (F->count >= F->capacity) {
+    if (F->count >= F->capacity)
+    {
         F->capacity *= 2;
         F->data = realloc(F->data,
                           F->wsize * F->capacity * sizeof(unsigned int));

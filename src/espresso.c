@@ -1,4 +1,9 @@
 #include "espresso.h"
+#include <time.h>
+
+static int trace_on = 0;
+
+void espresso_set_trace(int on) { trace_on = on; }
 
 // 枚举所有输入组合，不在 F 里的加入 R
 set_family *compute_off_set(set_family *F, int nvars)
@@ -240,15 +245,21 @@ set_family *reduce(set_family *F, set_family *R, int nin)
 
 set_family *espresso_minimize(set_family *F, int nin, int nout)
 {
+    clock_t t0 = clock();
     set_family *R = compute_off_set(F, nin);
     (void)nout;
 
+    if (trace_on)
+        fprintf(stderr, "# OFF-SET     Time was %.2f ms, cost is c=%d\n",
+                (double)(clock() - t0) / CLOCKS_PER_SEC * 1000, F->count);
+
     set_family *best = cover_dup(F);
-    int last_count;
+    int last_count, iterations = 0;
 
     for (int iter = 0; iter < 10; iter++)
     {
         last_count = best->count;
+        clock_t t1 = clock();
 
         set_family *tmp;
         tmp = expand(best, R, nin);
@@ -263,8 +274,21 @@ set_family *espresso_minimize(set_family *F, int nin, int nout)
         cover_free(best);
         best = tmp;
 
+        iterations++;
+
+        if (trace_on)
+            fprintf(stderr, "# ITER %d      Time was %.2f ms, cost is c=%d\n",
+                    iter + 1, (double)(clock() - t1) / CLOCKS_PER_SEC * 1000, best->count);
+
         if (best->count == last_count)
             break;
+    }
+
+    if (trace_on)
+    {
+        fprintf(stderr, "# TOTAL       Time was %.2f ms, iterations=%d\n",
+                (double)(clock() - t0) / CLOCKS_PER_SEC * 1000, iterations);
+        fprintf(stderr, "# FINAL       cost is c=%d\n", best->count);
     }
 
     cover_free(R);
