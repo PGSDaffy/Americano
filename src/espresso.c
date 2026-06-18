@@ -1,55 +1,12 @@
 #include "espresso.h"
+#include "complement.h"
 #include <time.h>
 
 static int trace_on = 0;
 
 void espresso_set_trace(int on) { trace_on = on; }
 
-// 枚举所有输入组合，不在 F 里的加入 R
-set_family *compute_off_set(set_family *F, int nvars)
-{
-    int half = (nvars + 15) / 16;
-    int nwords = half * 2;
-    int total = 1 << nvars;
-
-    set_family *R = cover_new(nwords, total);
-
-    for (int i = 0; i < total; i++)
-    {
-        unsigned int buf[nwords];
-        pset m = buf;
-        set_clear(m, nwords);
-
-        // 输入变量
-        for (int v = 0; v < nvars; v++)
-        {
-            int hi = v / 16;
-            int lo = hi + half;
-            int bit = v % 16;
-            if (i & (1 << v))
-                m[hi] |= (1u << bit);
-            else
-                m[lo] |= (1u << bit);
-        }
-
-        int covered = 0;
-        pset p, last;
-        foreach_set(F, last, p)
-        {
-            if (set_implies(m, p, nwords))
-            {
-                covered = 1;
-                break;
-            }
-        }
-        if (!covered)
-            cover_add(R, m);
-    }
-
-    return R;
-}
-
-// EXPAND: 把每个 cube 尽量变大，但不碰到 OFF-set
+// ── EXPAND: 把每个 cube 尽量变大，但不碰到 OFF-set ──
 set_family *expand(set_family *F, set_family *R, int nin)
 {
     int nwords = F->wsize;
@@ -78,12 +35,12 @@ set_family *expand(set_family *F, set_family *R, int nin)
             buf[hi] |= (1u << bit);
             buf[lo] |= (1u << bit);
 
-            // 检查是否碰到了 OFF-set
+            // 检查是否碰到了 OFF-set（与任何 OFF-set cube 有交集即为碰到）
             int ok = 1;
             pset q, qlast;
             foreach_set(R, qlast, q)
             {
-                if (set_implies(q, buf, nwords))
+                if (set_intersect(q, buf, nin, nwords))
                 {
                     ok = 0;
                     break;
@@ -246,7 +203,7 @@ set_family *reduce(set_family *F, set_family *R, int nin)
 set_family *espresso_minimize(set_family *F, int nin, int nout)
 {
     clock_t t0 = clock();
-    set_family *R = compute_off_set(F, nin);
+    set_family *R = complement(F, nin);
     (void)nout;
 
     if (trace_on)
