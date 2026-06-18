@@ -27,7 +27,7 @@ Americano/
 └── tests/          # 预留测试目录
 ```
 
-## 算法流程
+## 算法流程_test
 
 ```
 读入 PLA → EXPAND → IRREDUNDANT → REDUCE → 循环收敛 → 输出
