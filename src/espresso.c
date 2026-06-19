@@ -1,5 +1,6 @@
 #include "espresso.h"
 #include "complement.h"
+#include "matrix.h"
 #include <time.h>
 
 static int trace_on = 0;
@@ -65,137 +66,246 @@ set_family *expand(set_family *F, set_family *R, int nin)
     return result;
 }
 
-set_family *irredundant(set_family *F, set_family *R)
-{
-    (void)R;
-    int nwords = F->wsize;
-    set_family *result = cover_new(nwords, F->count);
+// ── helpers: enumerate all ON-set minterms ─────────────────────────
 
-    pset p, last;
-    foreach_set(F, last, p)
-    {
-        // 检查 p 是否已被 result 中某个 cube 完全包含
-        int keep = 1;
-        pset q, qlast;
-        foreach_set(result, qlast, q)
-        {
-            if (set_implies(p, q, nwords))
-            {
-                keep = 0;
+/* walk all 2^nin input combinations; return every minterm covered by F.
+ * caller receives a freshly-malloc'd array of pset and the count.     */
+static pset *enumerate_on_set(set_family *F, int nin, int *num_on)
+{
+    int nwords = F->wsize, half = nwords / 2, total = 1 << nin;
+    int cap = (total < 256) ? total : 256;
+    pset *on = (pset *) malloc((size_t)cap * sizeof(pset));
+    int cnt = 0;
+
+    for (int i = 0; i < total; i++) {
+        /* build minterm i on the stack */
+        unsigned int m_buf[128];          /* 128 ints → 1024 variables max */
+        pset m = m_buf;
+        set_clear(m, nwords);
+        for (int v = 0; v < nin; v++) {
+            int hi = v / 16, lo = hi + half, bit = v % 16;
+            if (i & (1 << v))
+                m[hi] |= (1u << bit);
+            else
+                m[lo] |= (1u << bit);
+        }
+
+        /* check coverage */
+        pset p, last;
+        foreach_set(F, last, p) {
+            if (set_implies(m, p, nwords)) {
+                if (cnt >= cap) { cap *= 2;
+                    on = (pset *) realloc(on, (size_t)cap * sizeof(pset)); }
+                on[cnt] = (pset) malloc((size_t)nwords * sizeof(unsigned int));
+                set_copy(on[cnt], m, nwords);
+                cnt++;
                 break;
             }
         }
-        if (keep)
-            cover_add(result, p);
     }
-
-    return result;
+    *num_on = cnt;
+    return on;
 }
 
-// 检查 minterm m 是否被 F_save 中除 exclude 外的 cube 覆盖
-static int covered_by_others(pset m, set_family *F_save, pset exclude, int nwords)
+static void free_on_minterms(pset *on, int num_on)
 {
-    pset q, qlast;
-    foreach_set(F_save, qlast, q)
-    {
-        if (q == exclude)
-            continue;
-        if (set_implies(m, q, nwords))
-            return 1;
-    }
-    return 0;
+    for (int i = 0; i < num_on; i++) free(on[i]);
+    free(on);
 }
 
-// REDUCE: 缩小每个 cube，但保证整个函数的覆盖不丢失
-set_family *reduce(set_family *F, set_family *R, int nin)
+/* ── helpers: coverage matrix ────────────────────────────────────── */
+
+/* build sparse matrix M[row=minterm_idx][col=cube_idx] = 1 if covered */
+static sm_matrix *build_cover_matrix(pset *on_minterms, int num_on,
+                                     set_family *F)
+{
+    int nwords = F->wsize;
+    sm_matrix *M = matrix_alloc();
+    if (num_on > 0 && F->count > 0)
+        matrix_resize(M, num_on - 1, F->count - 1);
+
+    for (int i = 0; i < num_on; i++) {
+        for (int j = 0; j < F->count; j++) {
+            if (set_implies(on_minterms[i], GETSET(F, j), nwords))
+                matrix_insert(M, i, j);
+        }
+    }
+    return M;
+}
+
+/* check whether reducing cube col_j to 'reduced' still covers every
+ * minterm for which col_j is the ONE AND ONLY cover in M.
+ * Returns 1 = safe, 0 = coverage lost.                                 */
+static int reduce_check(sm_matrix *M, int col_j, pset reduced,
+                        pset *on_minterms, int nwords)
+{
+    sm_col *pcol = matrix_get_col(M, col_j);
+    if (pcol == NULL) return 1;          /* cube already covers nothing */
+
+    sm_element *e;
+    sm_foreach_col_element(pcol, e) {
+        int row_i = e->row_num;
+        if (matrix_row_count(M, row_i) == 1) {
+            /* sole cover — must still match */
+            if (!set_implies(on_minterms[row_i], reduced, nwords))
+                return 0;
+        }
+    }
+    return 1;
+}
+
+/* after cube col_j is successfully reduced, remove from M any minterm
+ * that the new, smaller cube no longer covers.                         */
+static void update_matrix(sm_matrix *M, int col_j, pset new_cube,
+                          pset *on_minterms, int nwords)
+{
+    sm_col *pcol = matrix_get_col(M, col_j);
+    if (pcol == NULL) return;
+
+    sm_element *e, *enext;
+    for (e = pcol->first_row; e != NULL; e = enext) {
+        enext = e->next_row;
+        if (!set_implies(on_minterms[e->row_num], new_cube, nwords))
+            matrix_remove(M, e->row_num, col_j);
+    }
+}
+
+
+/* ── IRREDUNDANT: union-based redundancy detection via covering matrix ──
+ *
+ *  Previous version only checked p ⊆ q (single-cube containment).
+ *  This version builds the full covering matrix and keeps a cube iff
+ *  it covers at least one minterm NOT already covered by previously
+ *  kept (larger) cubes.  Cubes are processed largest-first.             */
+
+set_family *irredundant(set_family *F, set_family *R, int nin)
 {
     (void)R;
     int nwords = F->wsize;
-    int half = nwords / 2;
-    int total = 1 << nin;
 
-    // 保留原始 F 的一份（后续会修改 result 中的 cube，但需要原始 F 来做覆盖检查）
+    int num_on;
+    pset *on_minterms = enumerate_on_set(F, nin, &num_on);
+    if (num_on == 0) {
+        free(on_minterms);
+        set_family *result = cover_new(nwords, 1);
+        result->count = 0;
+        return result;
+    }
+
+    sm_matrix *M = build_cover_matrix(on_minterms, num_on, F);
+
+    /* sort cube indices by coverage size descending (largest first) */
+    int *order = (int *) malloc((size_t)F->count * sizeof(int));
+    for (int j = 0; j < F->count; j++) order[j] = j;
+    for (int a = 0; a < F->count; a++) {
+        int best = a;
+        for (int b = a + 1; b < F->count; b++)
+            if (matrix_col_count(M, order[b]) > matrix_col_count(M, order[best]))
+                best = b;
+        int tmp = order[a]; order[a] = order[best]; order[best] = tmp;
+    }
+
+    int *covered_cnt = (int *) calloc((size_t)num_on, sizeof(int));
+    int *keep        = (int *) calloc((size_t)F->count, sizeof(int));
+
+    set_family *result = cover_new(nwords, F->count > 0 ? F->count : 1);
+    result->count = 0;
+
+    for (int idx = 0; idx < F->count; idx++) {
+        int j = order[idx];
+        sm_col *pcol = matrix_get_col(M, j);
+        if (pcol == NULL) continue;       /* cube covers nothing */
+
+        /* is j redundant?  yes if every minterm it covers has
+         * covered_cnt > 0 (i.e. already covered by a kept cube). */
+        int redundant = 1;
+        sm_element *e;
+        sm_foreach_col_element(pcol, e) {
+            if (covered_cnt[e->row_num] == 0) {
+                redundant = 0;
+                break;
+            }
+        }
+
+        if (!redundant) {
+            keep[j] = 1;
+            cover_add(result, GETSET(F, j));
+            sm_foreach_col_element(pcol, e)
+                covered_cnt[e->row_num]++;
+        }
+    }
+
+    free(order);
+    free(covered_cnt);
+    free(keep);
+    matrix_free(M);
+    free_on_minterms(on_minterms, num_on);
+    return result;
+}
+
+
+/* ── REDUCE: shrink each cube, never losing ON-set coverage ────────
+ *
+ *  OLD: iterated all 2^nin minterms per literal per cube – O(c·v·2^n).
+ *  NEW: builds a sparse covering matrix once, then only checks the
+ *        "essential" minterms (those covered solely by this cube).    */
+
+set_family *reduce(set_family *F, set_family *R, int nin)
+{
+    (void)R;
+    int nwords = F->wsize, half = nwords / 2;
+
     set_family *F_save = cover_dup(F);
     set_family *result = cover_dup(F);
 
-    pset p, last;
-    foreach_set(result, last, p)
-    {
-        unsigned int buf[nwords];
+    /* ── 1. enumerate ON-set & build coverage matrix ── */
+    int num_on;
+    pset *on_minterms = enumerate_on_set(F_save, nin, &num_on);
+    if (num_on == 0) {
+        free_on_minterms(on_minterms, num_on);
+        cover_free(F_save);
+        return result;
+    }
+
+    sm_matrix *M = build_cover_matrix(on_minterms, num_on, result);
+
+    /* ── 2. reduce each cube in place ── */
+    for (int j = 0; j < result->count; j++) {
+        pset p = GETSET(result, j);
+        unsigned int buf[128];
         set_copy(buf, p, nwords);
 
-        for (int v = 0; v < nin; v++)
-        {
-            int hi = v / 16;
-            int lo = hi + half;
-            int bit = v % 16;
+        for (int v = 0; v < nin; v++) {
+            int hi = v / 16, lo = hi + half, bit = v % 16;
             int h = (buf[hi] >> bit) & 1;
             int l = (buf[lo] >> bit) & 1;
+            if (!(h == 1 && l == 1)) continue;   /* only shrink DC vars */
 
-            if (!(h == 1 && l == 1))
-                continue;
-
-            // 尝试改成 0
+            /* try → 0  (clear hi-bit, keep lo-bit = 1 → encoding 01) */
             buf[hi] &= ~(1u << bit);
-            int ok = 1;
-            for (int i = 0; i < total && ok; i++)
-            {
-                unsigned int m_buf[nwords];
-                pset m = m_buf;
-                set_clear(m, nwords);
-                for (int j = 0; j < nin; j++)
-                {
-                    int hh = j / 16, ll = hh + half, bb = j % 16;
-                    if (i & (1 << j))
-                        m[hh] |= (1u << bb);
-                    else
-                        m[ll] |= (1u << bb);
-                }
-                // m 在原始函数里吗？
-                if (!covered_by_others(m, F_save, NULL, nwords))
-                    continue;
-                // m 在新的函数里吗？
-                if (!covered_by_others(m, result, p, nwords) &&
-                    !set_implies(m, buf, nwords))
-                    ok = 0;
-            }
-            if (ok)
-                continue;
+            if (reduce_check(M, j, buf, on_minterms, nwords))
+                goto committed;
 
-            // 尝试改成 1
+            /* try → 1  (set hi-bit, clear lo-bit → encoding 10) */
             buf[hi] |= (1u << bit);
             buf[lo] &= ~(1u << bit);
-            ok = 1;
-            for (int i = 0; i < total && ok; i++)
-            {
-                unsigned int m_buf[nwords];
-                pset m = m_buf;
-                set_clear(m, nwords);
-                for (int j = 0; j < nin; j++)
-                {
-                    int hh = j / 16, ll = hh + half, bb = j % 16;
-                    if (i & (1 << j))
-                        m[hh] |= (1u << bb);
-                    else
-                        m[ll] |= (1u << bb);
-                }
-                if (!covered_by_others(m, F_save, NULL, nwords))
-                    continue;
-                if (!covered_by_others(m, result, p, nwords) &&
-                    !set_implies(m, buf, nwords))
-                    ok = 0;
-            }
-            if (ok)
-                continue;
+            if (reduce_check(M, j, buf, on_minterms, nwords))
+                goto committed;
 
-            // 都不行，改回 -
+            /* neither works — revert to DC */
             buf[hi] |= (1u << bit);
             buf[lo] |= (1u << bit);
+
+            committed:;
         }
 
+        /* ── commit: update matrix and write back ── */
+        update_matrix(M, j, buf, on_minterms, nwords);
         set_copy(p, buf, nwords);
     }
 
+    matrix_free(M);
+    free_on_minterms(on_minterms, num_on);
     cover_free(F_save);
     return result;
 }
@@ -223,7 +333,7 @@ set_family *espresso_minimize(set_family *F, int nin, int nout)
         cover_free(best);
         best = tmp;
 
-        tmp = irredundant(best, R);
+        tmp = irredundant(best, R, nin);
         cover_free(best);
         best = tmp;
 
