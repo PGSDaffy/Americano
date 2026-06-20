@@ -68,9 +68,12 @@ set_family *expand(set_family *F, set_family *R, int nin)
 
 // ── helpers: enumerate all ON-set minterms ─────────────────────────
 
-/* walk all 2^nin input combinations; return every minterm covered by F.
- * caller receives a freshly-malloc'd array of pset and the count.     */
-static pset *enumerate_on_set(set_family *F, int nin, int *num_on)
+/* walk all 2^nin input combinations; for each input, for each cube
+ * that covers it, emit a full minterm with the cube's output bits.
+ * This correctly distinguishes (input,output) pairs in multi-output
+ * functions — two cubes with different outputs covering the same
+ * input produce distinct rows in the covering matrix.               */
+static pset *enumerate_on_set(set_family *F, int nin, int nout, int *num_on)
 {
     int nwords = F->wsize, half = nwords / 2, total = 1 << nin;
     int cap = (total < 256) ? total : 256;
@@ -78,29 +81,50 @@ static pset *enumerate_on_set(set_family *F, int nin, int *num_on)
     int cnt = 0;
 
     for (int i = 0; i < total; i++) {
-        /* build minterm i on the stack */
-        unsigned int m_buf[128];          /* 128 ints → 1024 variables max */
-        pset m = m_buf;
-        set_clear(m, nwords);
+        /* build input-only minterm */
+        unsigned int input_buf[128];
+        pset im = input_buf;
+        set_clear(im, nwords);
         for (int v = 0; v < nin; v++) {
             int hi = v / 16, lo = hi + half, bit = v % 16;
             if (i & (1 << v))
-                m[hi] |= (1u << bit);
+                im[hi] |= (1u << bit);
             else
-                m[lo] |= (1u << bit);
+                im[lo] |= (1u << bit);
         }
 
-        /* check coverage */
+        /* for each cube covering this input, create a full minterm
+         * that includes the cube's output bits.  set_implies(im,p)
+         * checks only input bits here (im's output bits are 0, and
+         * 0 ⊆ {0,1} always holds).                                   */
         pset p, last;
         foreach_set(F, last, p) {
-            if (set_implies(m, p, nwords)) {
-                if (cnt >= cap) { cap *= 2;
-                    on = (pset *) realloc(on, (size_t)cap * sizeof(pset)); }
-                on[cnt] = (pset) malloc((size_t)nwords * sizeof(unsigned int));
-                set_copy(on[cnt], m, nwords);
-                cnt++;
-                break;
+            if (!set_implies(im, p, nwords))
+                continue;
+
+            /* merge input bits + output bits from p */
+            unsigned int full_buf[128];
+            pset full = full_buf;
+            set_copy(full, im, nwords);
+            for (int o = 0; o < nout; o++) {
+                int ohi = (nin + o) / 16;
+                int obit = (nin + o) % 16;
+                if ((p[ohi] >> obit) & 1)
+                    full[ohi] |= (1u << obit);
             }
+
+            /* dedup: skip if this exact (input,output) pair is already stored */
+            int dup = 0;
+            for (int k = 0; k < cnt; k++) {
+                if (set_equal(on[k], full, nwords)) { dup = 1; break; }
+            }
+            if (dup) continue;
+
+            if (cnt >= cap) { cap *= 2;
+                on = (pset *) realloc(on, (size_t)cap * sizeof(pset)); }
+            on[cnt] = (pset) malloc((size_t)nwords * sizeof(unsigned int));
+            set_copy(on[cnt], full, nwords);
+            cnt++;
         }
     }
     *num_on = cnt;
@@ -178,13 +202,13 @@ static void update_matrix(sm_matrix *M, int col_j, pset new_cube,
  *  it covers at least one minterm NOT already covered by previously
  *  kept (larger) cubes.  Cubes are processed largest-first.             */
 
-set_family *irredundant(set_family *F, set_family *R, int nin)
+set_family *irredundant(set_family *F, set_family *R, int nin, int nout)
 {
     (void)R;
     int nwords = F->wsize;
 
     int num_on;
-    pset *on_minterms = enumerate_on_set(F, nin, &num_on);
+    pset *on_minterms = enumerate_on_set(F, nin, nout, &num_on);
     if (num_on == 0) {
         free(on_minterms);
         set_family *result = cover_new(nwords, 1);
@@ -250,7 +274,7 @@ set_family *irredundant(set_family *F, set_family *R, int nin)
  *  NEW: builds a sparse covering matrix once, then only checks the
  *        "essential" minterms (those covered solely by this cube).    */
 
-set_family *reduce(set_family *F, set_family *R, int nin)
+set_family *reduce(set_family *F, set_family *R, int nin, int nout)
 {
     (void)R;
     int nwords = F->wsize, half = nwords / 2;
@@ -260,7 +284,7 @@ set_family *reduce(set_family *F, set_family *R, int nin)
 
     /* ── 1. enumerate ON-set & build coverage matrix ── */
     int num_on;
-    pset *on_minterms = enumerate_on_set(F_save, nin, &num_on);
+    pset *on_minterms = enumerate_on_set(F_save, nin, nout, &num_on);
     if (num_on == 0) {
         free_on_minterms(on_minterms, num_on);
         cover_free(F_save);
@@ -314,7 +338,6 @@ set_family *espresso_minimize(set_family *F, int nin, int nout)
 {
     clock_t t0 = clock();
     set_family *R = complement(F, nin);
-    (void)nout;
 
     if (trace_on)
         fprintf(stderr, "# OFF-SET     Time was %.2f ms, cost is c=%d\n",
@@ -333,11 +356,11 @@ set_family *espresso_minimize(set_family *F, int nin, int nout)
         cover_free(best);
         best = tmp;
 
-        tmp = irredundant(best, R, nin);
+        tmp = irredundant(best, R, nin, nout);
         cover_free(best);
         best = tmp;
 
-        tmp = reduce(best, R, nin);
+        tmp = reduce(best, R, nin, nout);
         cover_free(best);
         best = tmp;
 
