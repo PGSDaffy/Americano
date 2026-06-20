@@ -17,13 +17,13 @@ lit_count() {
     grep "^[01-]" "$1" | sed 's/ //g; s/-//g' | tr -d '\n' | wc -c
 }
 
-# 解析 Americano 的 -t 输出
+# 解析 Americano 的 -t 输出（逐输出最小化，多组 FINAL/TOTAL）
 parse_a() {
     local trace="$1"
-    ITER_A=$(echo "$trace" | grep "TOTAL" | grep -oP 'iterations=\K\d+')
-    TIME_A=$(echo "$trace" | grep "TOTAL" | grep -oP '[\d.]+(?= ms)')
-    COST_A=$(echo "$trace" | grep "FINAL" | grep -oP 'c=\K\d+')
-    ITER_A=${ITER_A:-?}; TIME_A=${TIME_A:-?}; COST_A=${COST_A:-?}
+    COST_A=$(echo "$trace" | grep "FINAL" | grep -oP 'c=\K\d+' | paste -sd+ | bc)
+    TIME_A=$(echo "$trace" | grep "TOTAL" | grep -oP '[\d.]+(?= ms)' | paste -sd+ | bc)
+    ITER_A=$(echo "$trace" | grep "TOTAL" | grep -oP 'iterations=\K\d+' | sort -n | tail -1)
+    COST_A=${COST_A:-?}; TIME_A=${TIME_A:-?}; ITER_A=${ITER_A:-?}
 }
 
 # 解析 espresso-logic 的 -t 输出（trace 在 stdout，和 PLA 混在一起）
