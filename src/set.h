@@ -25,6 +25,9 @@ int  set_var_phase(pset s, int v, int half);
 // 检查两个 cube 是否共享至少一个 minterm（逐变量兼容性）
 int  set_intersect(pset a, pset b, int nin, int nwords);
 
+// 检查输出位（output vars use hi-bit only at indices nin..nin+nout-1）
+int  set_has_output(pset s, int out_idx, int nin);
+
 // 遍历 cover 里的每个 pset
 #define foreach_set(F, last, p)                             \
     for (p = (F)->data, last = p + (F)->count * (F)->wsize; \

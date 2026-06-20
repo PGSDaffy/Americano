@@ -361,3 +361,87 @@ set_family *espresso_minimize(set_family *F, int nin, int nout)
     cover_free(R);
     return best;
 }
+
+/* ── multi-output minimize ───────────────────────────────────────────
+ *
+ *  Splits the cover by output, minimizes each output independently,
+ *  then merges.  Output bits use hi-bit only at indices nin..nin+nout-1.
+ * ──────────────────────────────────────────────────────────────────── */
+
+/* extract cubes where output out_idx = 1, clearing ALL output bits */
+static set_family *extract_output_on(set_family *F, int out_idx,
+                                     int nin, int nout)
+{
+    int nwords = F->wsize;
+    set_family *result = cover_new(nwords, F->count > 0 ? F->count : 1);
+    result->count = 0;
+
+    pset p, last;
+    foreach_set(F, last, p) {
+        if (!set_has_output(p, out_idx, nin))
+            continue;
+
+        unsigned int buf[128];
+        set_copy(buf, p, nwords);
+
+        /* clear ALL output hi-bits (nin .. nin+nout-1) */
+        for (int o = 0; o < nout; o++) {
+            int ohi = (nin + o) / 16;
+            int obit = (nin + o) % 16;
+            buf[ohi] &= ~(1u << obit);
+        }
+
+        cover_add(result, buf);
+    }
+    return result;
+}
+
+/* set output out_idx = 1 on every cube in F */
+static void cover_set_output(set_family *F, int out_idx, int nin)
+{
+    pset p, last;
+    foreach_set(F, last, p) {
+        int ohi = (nin + out_idx) / 16;
+        int obit = (nin + out_idx) % 16;
+        p[ohi] |= (1u << obit);
+    }
+}
+
+/* append all cubes from src into dst (dst is modified in-place) */
+static void cover_append(set_family *dst, set_family *src)
+{
+    pset p, last;
+    foreach_set(src, last, p)
+        cover_add(dst, p);
+}
+
+set_family *espresso_minimize_multi(set_family *F, int nin, int nout)
+{
+    int nwords = F->wsize;
+
+    /* result will hold merged minimized covers from all outputs */
+    set_family *merged = cover_new(nwords, F->count > 0 ? F->count : 1);
+    merged->count = 0;
+
+    for (int o = 0; o < nout; o++) {
+        set_family *on_set = extract_output_on(F, o, nin, nout);
+        if (on_set->count == 0) {
+            /* output is constant 0 — no ON-set cubes */
+            cover_free(on_set);
+            continue;
+        }
+
+        /* minimize this single-output function */
+        set_family *minimized = espresso_minimize(on_set, nin, 1);
+        cover_free(on_set);
+
+        /* restore the output bit */
+        cover_set_output(minimized, o, nin);
+
+        /* merge into final result */
+        cover_append(merged, minimized);
+        cover_free(minimized);
+    }
+
+    return merged;
+}

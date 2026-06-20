@@ -108,3 +108,10 @@ int set_intersect(pset a, pset b, int nin, int nwords)
     }
     return 1;
 }
+
+int set_has_output(pset s, int out_idx, int nin)
+{
+    int hi = (nin + out_idx) / 16;
+    int bit = (nin + out_idx) % 16;
+    return (s[hi] >> bit) & 1;
+}
