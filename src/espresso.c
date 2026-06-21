@@ -362,6 +362,81 @@ set_family *espresso_minimize(set_family *F, int nin, int nout)
     return best;
 }
 
+// ── 旧版 irredundant：单 cube 包含，小规模用 ──
+static set_family *irredundant_simple(set_family *F)
+{
+    int nwords=F->wsize; set_family *r=cover_new(nwords,F->count);
+    pset p,last; foreach_set(F,last,p){
+        int keep=1; pset q,qlast;
+        foreach_set(r,qlast,q){if(set_implies(p,q,nwords)){keep=0;break;}}
+        if(keep) cover_add(r,p);
+    }
+    return r;
+}
+
+// ── 暴力 OFF-set ──
+static set_family *compute_off_set_bf(set_family *F, int nin)
+{
+    int half=(nin+15)/16, nwords=half*2, total=1<<nin;
+    set_family *R=cover_new(nwords,total);
+    for(int i=0;i<total;i++){
+        unsigned int buf[128]; pset m=buf; set_clear(m,nwords);
+        for(int v=0;v<nin;v++){
+            int hi=v/16,lo=hi+half,bit=v%16;
+            if(i&(1<<v)) m[hi]|=(1u<<bit); else m[lo]|=(1u<<bit);
+        }
+        int covered=0; pset p,last;
+        foreach_set(F,last,p){if(set_implies(m,p,nwords)){covered=1;break;}}
+        if(!covered) cover_add(R,m);
+    }
+    return R;
+}
+
+// ── 小规模路径：暴力 OFF-set + 旧 irredundant + 旧 expand ──
+static set_family *espresso_minimize_small(set_family *F, int nin)
+{
+    clock_t t0=clock(); set_family *R=compute_off_set_bf(F,nin);
+    if(trace_on) fprintf(stderr,"# OFF-SET     Time was %.2f ms, cost is c=%d\n",
+        (double)(clock()-t0)/CLOCKS_PER_SEC*1000,F->count);
+    int nwords=F->wsize, half=nwords/2, iterations=0;
+    set_family *best=cover_dup(F); int last_count;
+    for(int iter=0;iter<10;iter++){
+        last_count=best->count; clock_t t1=clock();
+        set_family *E=cover_new(nwords,best->count);
+        { pset p,last2; foreach_set(best,last2,p){
+            unsigned int buf[128]; set_copy(buf,p,nwords);
+            for(int v=0;v<nin;v++){
+                int hi=v/16,lo=hi+half,bit=v%16;
+                int h=(buf[hi]>>bit)&1,l=(buf[lo]>>bit)&1;
+                if(h==1&&l==1) continue;
+                buf[hi]|=(1u<<bit); buf[lo]|=(1u<<bit);
+                int ok=1; pset q,qlast;
+                foreach_set(R,qlast,q){if(set_implies(q,buf,nwords)){ok=0;break;}}
+                if(!ok){buf[hi]&=~(1u<<bit);buf[lo]&=~(1u<<bit);
+                    if(h)buf[hi]|=(1u<<bit);if(l)buf[lo]|=(1u<<bit);}
+            }
+            cover_add(E,buf);
+        }}
+        cover_free(best); best=E;
+        set_family *t=irredundant_simple(best); cover_free(best); best=t;
+        iterations++;
+        if(trace_on) fprintf(stderr,"# ITER %d      Time was %.2f ms, cost is c=%d\n",
+            iter+1,(double)(clock()-t1)/CLOCKS_PER_SEC*1000,best->count);
+        if(best->count==last_count) break;
+    }
+    if(trace_on){fprintf(stderr,"# TOTAL       Time was %.2f ms, iterations=%d\n",
+        (double)(clock()-t0)/CLOCKS_PER_SEC*1000,iterations);
+        fprintf(stderr,"# FINAL       cost is c=%d\n",best->count);}
+    cover_free(R); return best;
+}
+
+// ── 自动选择：nin≤8 且单输出用旧路径，否则逐输出多路 ──
+set_family *espresso_minimize_auto(set_family *F, int nin, int nout)
+{
+    if(nin<=8 && nout==1) return espresso_minimize_small(F,nin);
+    return espresso_minimize_multi(F,nin,nout);
+}
+
 /* ── multi-output minimize ───────────────────────────────────────────
  *
  *  Splits the cover by output, minimizes each output independently,
