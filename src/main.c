@@ -28,7 +28,7 @@ int main(int argc, char **argv)
     if (trace)
         espresso_set_trace(1);
 
-    set_family *result = espresso_minimize_multi(p->cover, p->nin, p->nout);
+    set_family *result = espresso_minimize_auto(p->cover, p->nin, p->nout);
 
     if (!verify_equiv(p->cover, result, p->nin, p->nout))
     {

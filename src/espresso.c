@@ -8,15 +8,16 @@ static int trace_on = 0;
 void espresso_set_trace(int on) { trace_on = on; }
 
 // ── EXPAND: 把每个 cube 尽量变大，但不碰到 OFF-set ──
-set_family *expand(set_family *F, set_family *R, int nin)
+set_family *expand(set_family *F, set_family *R, int nin, int nout)
 {
+    (void)nout;
     int nwords = F->wsize;
     set_family *result = cover_new(nwords, F->count);
 
     pset p, last;
     foreach_set(F, last, p)
     {
-        unsigned int buf[nwords];
+        unsigned int buf[128];
         set_copy(buf, p, nwords);
 
         int half = nwords / 2;
@@ -28,15 +29,13 @@ set_family *expand(set_family *F, set_family *R, int nin)
             int h = (buf[hi] >> bit) & 1;
             int l = (buf[lo] >> bit) & 1;
 
-            // 已经是 -（11）就跳过
             if (h == 1 && l == 1)
                 continue;
 
-            // 尝试改成 -
             buf[hi] |= (1u << bit);
             buf[lo] |= (1u << bit);
 
-            // 检查是否碰到了 OFF-set（与任何 OFF-set cube 有交集即为碰到）
+            /* check against OFF-set: full variable space (input+output, all 2-bit) */
             int ok = 1;
             pset q, qlast;
             foreach_set(R, qlast, q)
@@ -50,19 +49,47 @@ set_family *expand(set_family *F, set_family *R, int nin)
 
             if (!ok)
             {
-                // 碰到了，改回去
                 buf[hi] &= ~(1u << bit);
                 buf[lo] &= ~(1u << bit);
-                if (h)
-                    buf[hi] |= (1u << bit);
-                if (l)
-                    buf[lo] |= (1u << bit);
+                if (h) buf[hi] |= (1u << bit);
+                if (l) buf[lo] |= (1u << bit);
             }
         }
 
         cover_add(result, buf);
     }
 
+    return result;
+}
+
+// ── EXPAND_FULL: 检查全部变量（输入+输出），用于直接多输出最小化 ──
+static set_family *expand_full(set_family *F, set_family *R, int nin, int nout)
+{
+    int nwords = F->wsize;
+    int total_vars = nin + nout;
+    set_family *result = cover_new(nwords, F->count);
+    pset p, last;
+    foreach_set(F, last, p) {
+        unsigned int buf[128];
+        set_copy(buf, p, nwords);
+        int half = nwords / 2;
+        for (int v = 0; v < nin; v++) {
+            int hi = v / 16, lo = hi + half, bit = v % 16;
+            int h = (buf[hi] >> bit) & 1, l = (buf[lo] >> bit) & 1;
+            if (h == 1 && l == 1) continue;
+            buf[hi] |= (1u << bit); buf[lo] |= (1u << bit);
+            int ok = 1; pset q, ql;
+            foreach_set(R, ql, q) {
+                if (set_intersect(q, buf, total_vars, nwords)) { ok = 0; break; }
+            }
+            if (!ok) {
+                buf[hi] &= ~(1u << bit); buf[lo] &= ~(1u << bit);
+                if (h) buf[hi] |= (1u << bit);
+                if (l) buf[lo] |= (1u << bit);
+            }
+        }
+        cover_add(result, buf);
+    }
     return result;
 }
 
@@ -102,15 +129,15 @@ static pset *enumerate_on_set(set_family *F, int nin, int nout, int *num_on)
             if (!set_implies(im, p, nwords))
                 continue;
 
-            /* merge input bits + output bits from p */
+            /* merge input bits + output bits from p (full 2-bit encoding) */
             unsigned int full_buf[128];
             pset full = full_buf;
             set_copy(full, im, nwords);
             for (int o = 0; o < nout; o++) {
-                int ohi = (nin + o) / 16;
-                int obit = (nin + o) % 16;
-                if ((p[ohi] >> obit) & 1)
-                    full[ohi] |= (1u << obit);
+                int idx = nin + o;
+                int hi = idx / 16, lo = hi + half, bit = idx % 16;
+                if ((p[hi] >> bit) & 1) full[hi] |= (1u << bit);
+                if ((p[lo] >> bit) & 1) full[lo] |= (1u << bit);
             }
 
             /* dedup: skip if this exact (input,output) pair is already stored */
@@ -352,7 +379,7 @@ set_family *espresso_minimize(set_family *F, int nin, int nout)
         clock_t t1 = clock();
 
         set_family *tmp;
-        tmp = expand(best, R, nin);
+        tmp = expand(best, R, nin, nout);
         cover_free(best);
         best = tmp;
 
@@ -385,86 +412,74 @@ set_family *espresso_minimize(set_family *F, int nin, int nout)
     return best;
 }
 
-/* ── multi-output minimize ───────────────────────────────────────────
- *
- *  Splits the cover by output, minimizes each output independently,
- *  then merges.  Output bits use hi-bit only at indices nin..nin+nout-1.
- * ──────────────────────────────────────────────────────────────────── */
+/* ── multi-output: per-output minimize then merge ────────────────── */
 
-/* extract cubes where output out_idx = 1, clearing ALL output bits */
-static set_family *extract_output_on(set_family *F, int out_idx,
-                                     int nin, int nout)
+static set_family *extract_output_on(set_family *F, int o, int nin, int nout)
+{ int nw=F->wsize,h=nw/2; set_family *r=cover_new(nw,F->count?:1); r->count=0;
+  pset p,l; foreach_set(F,l,p){
+  int idx=nin+o,hi=idx/16,bit=idx%16;
+  if(!((p[hi]>>bit)&1))continue;
+  unsigned int b[128];set_copy(b,p,nw);
+  for(int k=0;k<nout;k++){int ii=nin+k,hh=ii/16,ll=hh+h,bb=ii%16;
+  b[hh]&=~(1u<<bb);b[ll]&=~(1u<<bb);} cover_add(r,b);} return r; }
+
+static void cover_set_output(set_family *F, int o, int nin)
+{ int h=F->wsize/2; pset p,l; foreach_set(F,l,p){
+  int idx=nin+o,hi=idx/16,lo=hi+h,bit=idx%16;
+  p[hi]|=(1u<<bit); p[lo]&=~(1u<<bit); } }
+
+static void cover_append(set_family *d, set_family *s)
+{ pset p,l; foreach_set(s,l,p) cover_add(d,p); }
+
+static void cover_merge_shared_inputs(set_family *m, int nin, int nout)
+{ int nw=m->wsize,*del=calloc(m->count,sizeof(int));
+  for(int i=0;i<m->count;i++){if(del[i])continue;pset pi=GETSET(m,i);
+  for(int j=i+1;j<m->count;j++){if(del[j])continue;pset pj=GETSET(m,j);
+  unsigned int ti[128],tj[128];set_copy(ti,pi,nw);set_copy(tj,pj,nw);
+  for(int o=0;o<nout;o++){int ii=nin+o,hi=ii/16,lo=hi+nw/2,bit=ii%16;
+  ti[hi]&=~(1u<<bit);ti[lo]&=~(1u<<bit);tj[hi]&=~(1u<<bit);tj[lo]&=~(1u<<bit);}
+  if(set_equal(ti,tj,nw)){for(int o=0;o<nout;o++){int ii=nin+o,hi=ii/16,lo=hi+nw/2,bit=ii%16;
+  if((pj[hi]>>bit)&1){pi[hi]|=(1u<<bit);pi[lo]&=~(1u<<bit);}}del[j]=1;}}}
+  int w=0;for(int i=0;i<m->count;i++){if(!del[i]){if(w!=i)set_copy(GETSET(m,w),GETSET(m,i),nw);w++;}}
+  m->count=w;free(del); }
+
+// ── 直接多输出最小化 (nout ≤ 5): 全空间 complement，跨输出共享 ──
+set_family *espresso_minimize_direct(set_family *F, int nin, int nout)
 {
-    int nwords = F->wsize;
-    set_family *result = cover_new(nwords, F->count > 0 ? F->count : 1);
-    result->count = 0;
-
-    pset p, last;
-    foreach_set(F, last, p) {
-        if (!set_has_output(p, out_idx, nin))
-            continue;
-
-        unsigned int buf[128];
-        set_copy(buf, p, nwords);
-
-        /* clear ALL output hi-bits (nin .. nin+nout-1) */
-        for (int o = 0; o < nout; o++) {
-            int ohi = (nin + o) / 16;
-            int obit = (nin + o) % 16;
-            buf[ohi] &= ~(1u << obit);
-        }
-
-        cover_add(result, buf);
+    clock_t t0 = clock();
+    set_family *R = complement(F, nin + nout);
+    if (trace_on) fprintf(stderr, "# OFF-SET     Time=%.2f ms, cost=c=%d\n",
+        (double)(clock()-t0)/CLOCKS_PER_SEC*1000, F->count);
+    set_family *best = cover_dup(F);
+    int last_count;
+    for (int iter = 0; iter < 10; iter++) {
+        last_count = best->count;
+        set_family *tmp;
+        tmp = expand_full(best, R, nin, nout);
+        cover_free(best); best = tmp;
+        tmp = irredundant(best, R, nin, nout);
+        cover_free(best); best = tmp;
+        tmp = reduce(best, R, nin, nout);
+        cover_free(best); best = tmp;
+        if (best->count == last_count) break;
     }
-    return result;
+    cover_free(R);
+    return best;
 }
 
-/* set output out_idx = 1 on every cube in F */
-static void cover_set_output(set_family *F, int out_idx, int nin)
+// ── 自动选择：nout≤5→直接，nout>5→逐输出 ──
+set_family *espresso_minimize_auto(set_family *F, int nin, int nout)
 {
-    pset p, last;
-    foreach_set(F, last, p) {
-        int ohi = (nin + out_idx) / 16;
-        int obit = (nin + out_idx) % 16;
-        p[ohi] |= (1u << obit);
-    }
-}
-
-/* append all cubes from src into dst (dst is modified in-place) */
-static void cover_append(set_family *dst, set_family *src)
-{
-    pset p, last;
-    foreach_set(src, last, p)
-        cover_add(dst, p);
+    if (nout <= 5)
+        return espresso_minimize_direct(F, nin, nout);
+    else
+        return espresso_minimize_multi(F, nin, nout);
 }
 
 set_family *espresso_minimize_multi(set_family *F, int nin, int nout)
-{
-    int nwords = F->wsize;
-
-    /* result will hold merged minimized covers from all outputs */
-    set_family *merged = cover_new(nwords, F->count > 0 ? F->count : 1);
-    merged->count = 0;
-
-    for (int o = 0; o < nout; o++) {
-        set_family *on_set = extract_output_on(F, o, nin, nout);
-        if (on_set->count == 0) {
-            /* output is constant 0 — no ON-set cubes */
-            cover_free(on_set);
-            continue;
-        }
-
-        /* minimize this single-output function */
-        set_family *minimized = espresso_minimize(on_set, nin, 1);
-        cover_free(on_set);
-
-        /* restore the output bit */
-        cover_set_output(minimized, o, nin);
-
-        /* merge into final result */
-        cover_append(merged, minimized);
-        cover_free(minimized);
-    }
-
-    return merged;
-}
+{ int nw=F->wsize; set_family *m=cover_new(nw,F->count?:1); m->count=0;
+  for(int o=0;o<nout;o++){set_family *on=extract_output_on(F,o,nin,nout);
+  if(on->count==0){cover_free(on);continue;}
+  set_family *mn=espresso_minimize(on,nin,1); cover_free(on);
+  cover_set_output(mn,o,nin); cover_append(m,mn); cover_free(mn); }
+  cover_merge_shared_inputs(m,nin,nout); return m; }

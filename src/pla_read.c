@@ -48,7 +48,7 @@ static void parse_term(char *line, pset cube, int nin, int nout, int half)
         line++;
     }
 
-    // 输出部分
+    // 输出部分 — 2-bit 编码 (与输入一致: 1=10, 0=01, -=11)
     for (int v = 0; v < nout && *line; v++)
     {
         while (*line == ' ' || *line == '\t')
@@ -57,12 +57,21 @@ static void parse_term(char *line, pset cube, int nin, int nout, int half)
             break;
         int idx = nin + v;
         int hi = idx / 16;
+        int lo = hi + half;
         int bit = idx % 16;
         if (*line == '1')
         {
-            cube[hi] |= (1u << bit);
+            cube[hi] |= (1u << bit);          /* ONE  = hi=1, lo=0 */
         }
-        // '0' 或 '-' 都不设置（保持 0 = 不属于这个输出）
+        else if (*line == '0')
+        {
+            cube[lo] |= (1u << bit);          /* ZERO = hi=0, lo=1 */
+        }
+        else  // '-'
+        {
+            cube[hi] |= (1u << bit);          /* DC   = hi=1, lo=1 */
+            cube[lo] |= (1u << bit);
+        }
         line++;
     }
 }

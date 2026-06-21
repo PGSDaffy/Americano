@@ -34,10 +34,10 @@ void pla_write(const pla_t *p, FILE *out)
         fputc(' ', out);
         for (int v = 0; v < p->nout; v++)
         {
-            int hi = (p->nin + v) / 16;
-            int bit = (p->nin + v) % 16;
-            int b = (cube[hi] >> bit) & 1;
-            fputc(b ? '1' : '0', out);
+            int idx = p->nin + v;
+            int hi = idx / 16;
+            int bit = idx % 16;
+            fputc(((cube[hi] >> bit) & 1) ? '1' : '0', out);
         }
         fputc('\n', out);
     }
