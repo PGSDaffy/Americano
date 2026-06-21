@@ -1,6 +1,6 @@
 #include "matrix.h"
 
-/* ── allocation helpers ─────────────────────────────────────────────── */
+// allocation helpers
 
 #define ALLOC(type, num)  ((type *) malloc(sizeof(type) * (num)))
 #define NIL(type)         ((type) 0)
@@ -41,13 +41,7 @@ static sm_col *col_alloc(void)
 static void col_free(sm_col *c) { free(c); }
 
 
-/* ── doubly-linked-list helper macros ─────────────────────────────────
- *
- *  sorted_insert: insert newobj into a doubly-linked list ordered by
- *                 ascending "value" field.
- *
- *  dll_unlink:    unlink element p from its doubly-linked list.
- * ──────────────────────────────────────────────────────────────────── */
+// doubly-linked-list insertion and unlink macros
 
 #define sorted_insert(type, first, last, count,                          \
                       next, prev, value, newval, newobj)                 \
@@ -92,7 +86,7 @@ static void col_free(sm_col *c) { free(c); }
     } while (0)
 
 
-/* ── public API ─────────────────────────────────────────────────────── */
+// public API
 
 sm_matrix *matrix_alloc(void)
 {
@@ -228,7 +222,7 @@ sm_element *matrix_find(sm_matrix *A, int rownum, int colnum)
 }
 
 
-/* internal: remove a specific element (must exist) */
+// remove a specific element (must exist)
 static void matrix_remove_element(sm_matrix *A, sm_element *p)
 {
     sm_row *prow;

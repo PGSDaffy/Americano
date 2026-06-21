@@ -1,7 +1,7 @@
 #include "complement.h"
 #include <string.h>
 
-// ── 前向声明 ─────────────────────────────────────────
+// forward declarations
 static set_family *complement_rec(set_family *F, int nin, int used_mask);
 static set_family *complement_enum(set_family *F, int nin, int used_mask);
 static set_family *compl_single_cube(pset p, int nin, int nwords);
@@ -16,24 +16,24 @@ static int  d1_compare(const void *a, const void *b);
 static void compl_lift(pset *A1, int nA, set_family *B,
                        pset bcube, int var, int half, int nwords);
 
-// d1_compare 需要的上下文（避免 qsort_r 的移植问题）
+// context for d1_compare (avoids qsort_r portability issues)
 static struct { int var; int half; int nwords; } d1_ctx;
 
-// ── 公共入口 ─────────────────────────────────────────
+// public entry
 
 set_family *complement(set_family *F, int nin)
 {
     return complement_rec(F, nin, 0);
 }
 
-// ── 递归核心 ─────────────────────────────────────────
+// recursive core
 
 static set_family *complement_rec(set_family *F, int nin, int used_mask)
 {
     int nwords = F->wsize;
     int half   = nwords / 2;
 
-    // ─── 特殊情形 1: 空 cover → 全集 ───
+    // case 1: empty cover → universal set
     if (F->count == 0) {
         set_family *R = cover_new(nwords, 1);
         unsigned int buf[nwords];
@@ -45,11 +45,11 @@ static set_family *complement_rec(set_family *F, int nin, int used_mask)
         return R;
     }
 
-    // ─── 特殊情形 2: 单 cube → De Morgan ───
+    // case 2: single cube → De Morgan
     if (F->count == 1)
         return compl_single_cube(GETSET(F, 0), nin, nwords);
 
-    // ─── 特殊情形 3: 存在全-DC cube → 空集 ───
+    // case 3: a fully-DC cube exists → empty set
     {
         pset p, last;
         foreach_set(F, last, p) {
@@ -62,7 +62,7 @@ static set_family *complement_rec(set_family *F, int nin, int used_mask)
         }
     }
 
-    // ─── 选取分裂变量 ───
+    // pick a splitting variable
     unsigned int cl_buf[nwords], cr_buf[nwords];
     pset cl = cl_buf, cr = cr_buf;
     int var = binate_split_select(F, nin, used_mask, nwords, cl, cr);
@@ -71,7 +71,7 @@ static set_family *complement_rec(set_family *F, int nin, int used_mask)
         return complement_enum(F, nin, used_mask);
     }
 
-    // ─── 递归分裂 ───
+    // recurse on cofactors
     set_family *F1 = cover_cofactor(F, var, ONE,  nwords);
     set_family *F0 = cover_cofactor(F, var, ZERO, nwords);
 
@@ -84,7 +84,7 @@ static set_family *complement_rec(set_family *F, int nin, int used_mask)
     return compl_merge(L, R, cl, cr, var, nin, nwords);
 }
 
-// ── 回退枚举（base case） ──────────────────────────
+// fallback enumeration (base case)
 
 static set_family *complement_enum(set_family *F, int nin, int used_mask)
 {
@@ -133,7 +133,7 @@ static set_family *complement_enum(set_family *F, int nin, int used_mask)
     return R;
 }
 
-// ── De Morgan: 单 cube 求补 ────────────────────────
+// De Morgan: complement a single cube
 
 static set_family *compl_single_cube(pset p, int nin, int nwords)
 {
@@ -172,7 +172,7 @@ static set_family *compl_single_cube(pset p, int nin, int nwords)
     return R;
 }
 
-// ── Shannon 余因子 ─────────────────────────────────
+// Shannon cofactor with respect to var=val
 
 static set_family *cover_cofactor(set_family *F, int var, int val, int nwords)
 {
@@ -194,7 +194,7 @@ static set_family *cover_cofactor(set_family *F, int var, int val, int nwords)
     return result;
 }
 
-// ── 选取最 binate 的分裂变量 ───────────────────────
+// pick the most binate splitting variable
 
 static int binate_split_select(set_family *F, int nin, int used_mask,
                                int nwords, pset cl, pset cr)
@@ -243,7 +243,7 @@ static int binate_split_select(set_family *F, int nin, int used_mask,
     return best_var;
 }
 
-// ── 合并左右 cofactor 的补集 ───────────────────────
+// merge complements of left/right cofactors
 
 static set_family *compl_merge(set_family *L, set_family *R,
                                pset cl, pset cr, int var, int nin, int nwords)
@@ -251,14 +251,14 @@ static set_family *compl_merge(set_family *L, set_family *R,
     (void)nin;
     int half = nwords / 2;
 
-    // Phase 1: 交集
+    // Phase 1: intersect
     {
         pset p, last;
         foreach_set(L, last, p) set_and(p, p, cl, nwords);
         foreach_set(R, last, p) set_and(p, p, cr, nwords);
     }
 
-    // Phase 2: 转为指针数组并排序
+    // Phase 2: convert to pointer arrays and sort
     int nL = L->count, nR = R->count;
     pset *L1 = malloc((nL + 1) * sizeof(pset));
     pset *R1 = malloc((nR + 1) * sizeof(pset));
@@ -285,7 +285,7 @@ static set_family *compl_merge(set_family *L, set_family *R,
     compl_lift(L1, nL, R, cr, var, half, nwords);
     compl_lift(R1, nR, L, cl, var, half, nwords);
 
-    // Phase 5: 收集结果
+    // Phase 5: collect results
     set_family *Tbar = cover_new(nwords, nL + nR);
     for (int i = 0; i < nL; i++) {
         cover_add(Tbar, L1[i]);
@@ -302,7 +302,7 @@ static set_family *compl_merge(set_family *L, set_family *R,
     return Tbar;
 }
 
-// ── Distance-1 合并 ────────────────────────────────
+// Distance-1 merge
 
 static int d1_compare(const void *a, const void *b)
 {
@@ -369,7 +369,7 @@ static void compl_d1merge(pset *L1, int nL, pset *R1, int nR,
     }
 }
 
-// ── Lifting：跨分支提升 ────────────────────────────
+// lifting: cross-branch absorption
 
 static void compl_lift(pset *A1, int nA, set_family *B,
                        pset bcube, int var, int half, int nwords)

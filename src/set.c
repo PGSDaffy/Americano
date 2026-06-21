@@ -7,17 +7,17 @@ void set_and(pset d, pset a, pset b, int nwords)
         d[i] = a[i] & b[i];
 }
 
-void set_or(pset d, pset a, pset b, int nwords)
-{
-    for (int i = 0; i < nwords; i++)
-        d[i] = a[i] | b[i];
-}
+// void set_or(pset d, pset a, pset b, int nwords)
+// {
+//     for (int i = 0; i < nwords; i++)
+//         d[i] = a[i] | b[i];
+// }
 
-void set_diff(pset d, pset a, pset b, int nwords)
-{
-    for (int i = 0; i < nwords; i++)
-        d[i] = a[i] & ~b[i];
-}
+// void set_diff(pset d, pset a, pset b, int nwords)
+// {
+//     for (int i = 0; i < nwords; i++)
+//         d[i] = a[i] & ~b[i];
+// }
 
 void set_copy(pset d, pset a, int nwords)
 {
@@ -29,30 +29,30 @@ void set_clear(pset s, int nwords)
     memset(s, 0, nwords * sizeof(unsigned int));
 }
 
-int set_equal(pset a, pset b, int nwords)
-{
-    for (int i = 0; i < nwords; i++)
-        if (a[i] != b[i])
-            return 0;
-    return 1;
-}
+// int set_equal(pset a, pset b, int nwords)
+// {
+//     for (int i = 0; i < nwords; i++)
+//         if (a[i] != b[i])
+//             return 0;
+//     return 1;
+// }
 
 int set_implies(pset a, pset b, int nwords)
 {
-    // a 的所有 1 位，在 b 里也必须是 1
+    // every 1-bit in a must also be 1 in b
     for (int i = 0; i < nwords; i++)
         if ((a[i] & b[i]) != a[i])
             return 0;
     return 1;
 }
 
-int set_disjoint(pset a, pset b, int nwords)
-{
-    for (int i = 0; i < nwords; i++)
-        if (a[i] & b[i])
-            return 0;
-    return 1;
-}
+// int set_disjoint(pset a, pset b, int nwords)
+// {
+//     for (int i = 0; i < nwords; i++)
+//         if (a[i] & b[i])
+//             return 0;
+//     return 1;
+// }
 
 int set_empty(pset a, int nwords)
 {
@@ -62,7 +62,7 @@ int set_empty(pset a, int nwords)
     return 1;
 }
 
-// ── 变量级操作 ───────────────────────────────────────
+// per-variable access
 
 int set_get_var(pset s, int v, int half)
 {

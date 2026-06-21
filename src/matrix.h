@@ -4,15 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* ── sparse matrix: orthogonal doubly-linked lists ───────────────
- *
- *  Represents a binary matrix where each entry (i,j) is either 0 or 1.
- *  Rows and columns are doubly-linked circular lists of elements.
- *  A pair of arrays (rows[], cols[]) maps integer indices to headers.
- *
- *  This is a minimal port from the reference matrix.c; we drop the
- *  FAST_AND_LOOSE freelist and all file-I/O / debug-print helpers.
- * ──────────────────────────────────────────────────────────────── */
+// sparse matrix: orthogonal doubly-linked lists.
+// Each entry (i,j) is either 0 or 1.
+// Rows and columns are doubly-linked lists of elements.
+// Arrays rows[] and cols[] map integer indices to headers.
 
 /* a single 1-entry in the matrix */
 typedef struct sm_element {
@@ -49,7 +44,7 @@ typedef struct sm_matrix {
 } sm_matrix;
 
 
-/* ── core API ────────────────────────────────────────────────── */
+// core API
 
 sm_matrix  *matrix_alloc(void);
 void        matrix_free(sm_matrix *A);
@@ -68,7 +63,7 @@ void        matrix_remove(sm_matrix *A, int row, int col);
 void        matrix_resize(sm_matrix *A, int row, int col);
 
 
-/* ── accessors (all O(1)) ────────────────────────────────────── */
+// accessors (all O(1))
 
 static inline sm_row *matrix_get_row(sm_matrix *A, int r) {
     return (r >= 0 && r < A->rows_size) ? A->rows[r] : NULL;
@@ -86,21 +81,21 @@ static inline int matrix_col_count(sm_matrix *A, int c) {
 }
 
 
-/* ── iteration macros ────────────────────────────────────────── */
+// iteration macros
 
-/* iterate all rows */
+// iterate all rows
 #define sm_foreach_row(A, prow) \
     for ((prow) = (A)->first_row; (prow) != NULL; (prow) = (prow)->next_row)
 
-/* iterate all columns */
+// iterate all columns
 #define sm_foreach_col(A, pcol) \
     for ((pcol) = (A)->first_col; (pcol) != NULL; (pcol) = (pcol)->next_col)
 
-/* iterate elements in a row */
+// iterate elements in a row
 #define sm_foreach_row_element(prow, p) \
     for ((p) = (prow)->first_col; (p) != NULL; (p) = (p)->next_col)
 
-/* iterate elements in a column */
+// iterate elements in a column
 #define sm_foreach_col_element(pcol, p) \
     for ((p) = (pcol)->first_row; (p) != NULL; (p) = (p)->next_row)
 

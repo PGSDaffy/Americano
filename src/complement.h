@@ -3,8 +3,8 @@
 
 #include "cover.h"
 
-// 递归分治求补：返回 ON-set F 的补集（OFF-set）
-// nin = 输入变量数（0..nin-1）
+// recursive complement via Shannon expansion: returns OFF-set of F
+// nin = number of input variables (indices 0..nin-1)
 set_family *complement(set_family *F, int nin);
 
 #endif

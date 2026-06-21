@@ -5,7 +5,7 @@
 
 #define MAX_LINE 4096
 
-// 逐行读，跳过空白行和注释
+// read next line, skip blanks and comments
 static char *next_line(FILE *f, char *buf, int size)
 {
     while (fgets(buf, size, f))
@@ -19,12 +19,12 @@ static char *next_line(FILE *f, char *buf, int size)
     return NULL;
 }
 
-// 解析一行数据: "01-1 10" → 前半段是输入，后半段是输出
+// parse a term like "01-1 10" → input part then output part
 static void parse_term(char *line, pset cube, int nin, int nout, int half)
 {
     set_clear(cube, half * 2);
 
-    // 输入部分
+    // input part
     for (int v = 0; v < nin && *line; v++)
     {
         while (*line == ' ' || *line == '\t')
@@ -48,7 +48,7 @@ static void parse_term(char *line, pset cube, int nin, int nout, int half)
         line++;
     }
 
-    // 输出部分
+    // output part
     for (int v = 0; v < nout && *line; v++)
     {
         while (*line == ' ' || *line == '\t')
@@ -62,7 +62,7 @@ static void parse_term(char *line, pset cube, int nin, int nout, int half)
         {
             cube[hi] |= (1u << bit);
         }
-        // '0' 或 '-' 都不设置（保持 0 = 不属于这个输出）
+        // '0' or '-' → leave bit 0 (not in this output)
         line++;
     }
 }
@@ -79,7 +79,7 @@ pla_t *pla_read(const char *filename)
     char line[MAX_LINE];
     int nin = 0, nout = 0, nterms = 0;
 
-    // 第一遍扫描：获取 .i .o
+    // first pass: get .i and .o
     while (next_line(f, line, MAX_LINE))
     {
         if (line[0] == '.' && line[1] == 'i')
@@ -106,7 +106,7 @@ pla_t *pla_read(const char *filename)
     pla->nout = nout;
     pla->cover = cover_new(nwords, nterms > 0 ? nterms : 4);
 
-    // 第二遍：读取数据行
+    // second pass: read data lines
     rewind(f);
     while (next_line(f, line, MAX_LINE))
     {

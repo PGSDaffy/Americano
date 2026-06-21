@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "pla.h"
 
-// 解码一个变量：01→'0', 10→'1', 11→'-'
+// decode one variable: 01→'0', 10→'1', 11→'-'
 static char var_char(pset cube, int v, int half)
 {
     int hi = v / 16;

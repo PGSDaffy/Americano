@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "verify.h"
 
-// 检查 minterm m 是否被 cover F 中某个 cube 覆盖，且该 cube 的输出 out_idx = 1
+// check if minterm m is covered by some cube in F with output out_idx = 1
 static int minterm_covered_output(pset m, set_family *F, int out_idx,
                                   int nin, int nwords)
 {
@@ -13,7 +13,7 @@ static int minterm_covered_output(pset m, set_family *F, int out_idx,
     return 0;
 }
 
-// 打印一个 minterm 的值（只打印输入部分）
+// print a minterm value (input part only)
 static void print_minterm(pset m, int nvars, int half)
 {
     for (int v = 0; v < nvars; v++)

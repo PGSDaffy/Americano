@@ -5,8 +5,8 @@
 
 typedef struct
 {
-    int nin;  // 输入变量数
-    int nout; // 输出变量数
+    int nin;  // number of inputs
+    int nout; // number of outputs
     set_family *cover;
 } pla_t;
 

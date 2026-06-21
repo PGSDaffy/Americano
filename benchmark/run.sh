@@ -96,9 +96,9 @@ for f in $(cat cases_mid.txt); do
     run_one "中" "$EXAMPLES/$f"
 done
 
-# 大规模（绝对路径）
+# 大规模
 for f in $(cat cases_large.txt); do
-    run_one "大" "$f"
+    run_one "大" "$EXAMPLES/$f"
 done
 
 rm -f "$TMP_A" "$TMP_E"

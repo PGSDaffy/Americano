@@ -3,7 +3,7 @@
 
 #include "pla.h"
 
-// 全局开关
+// global toggle for trace output
 void espresso_set_trace(int on);
 
 set_family *espresso_minimize(set_family *F, int nin, int nout);
