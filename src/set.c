@@ -84,8 +84,10 @@ void set_force_var(pset s, int v, int val, int half)
     int hi = v / 16, lo = hi + half, bit = v % 16;
     s[hi] &= ~(1u << bit);
     s[lo] &= ~(1u << bit);
-    if (val == ONE)       s[hi] |= (1u << bit);
-    else if (val == ZERO) s[lo] |= (1u << bit);
+    if (val == ONE)
+        s[hi] |= (1u << bit);
+    else if (val == ZERO)
+        s[lo] |= (1u << bit);
 }
 
 int set_var_phase(pset s, int v, int half)
@@ -99,7 +101,8 @@ int set_var_phase(pset s, int v, int half)
 int set_intersect(pset a, pset b, int nin, int nwords)
 {
     int half = nwords / 2;
-    for (int v = 0; v < nin; v++) {
+    for (int v = 0; v < nin; v++)
+    {
         int hi = v / 16, lo = hi + half, bit = v % 16;
         int ah = (a[hi] >> bit) & 1, al = (a[lo] >> bit) & 1;
         int bh = (b[hi] >> bit) & 1, bl = (b[lo] >> bit) & 1;

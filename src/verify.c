@@ -6,7 +6,8 @@ static int minterm_covered_output(pset m, set_family *F, int out_idx,
                                   int nin, int nwords)
 {
     pset p, last;
-    foreach_set(F, last, p) {
+    foreach_set(F, last, p)
+    {
         if (set_implies(m, p, nwords) && set_has_output(p, out_idx, nin))
             return 1;
     }

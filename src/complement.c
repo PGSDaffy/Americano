@@ -12,12 +12,17 @@ static set_family *compl_merge(set_family *L, set_family *R,
                                pset cl, pset cr, int var, int nin, int nwords);
 static void compl_d1merge(pset *L1, int nL, pset *R1, int nR,
                           int var, int half, int nwords);
-static int  d1_compare(const void *a, const void *b);
+static int d1_compare(const void *a, const void *b);
 static void compl_lift(pset *A1, int nA, set_family *B,
                        pset bcube, int var, int half, int nwords);
 
 // context for d1_compare (avoids qsort_r portability issues)
-static struct { int var; int half; int nwords; } d1_ctx;
+static struct
+{
+    int var;
+    int half;
+    int nwords;
+} d1_ctx;
 
 // public entry
 
@@ -31,10 +36,11 @@ set_family *complement(set_family *F, int nin)
 static set_family *complement_rec(set_family *F, int nin, int used_mask)
 {
     int nwords = F->wsize;
-    int half   = nwords / 2;
+    int half = nwords / 2;
 
     // case 1: empty cover → universal set
-    if (F->count == 0) {
+    if (F->count == 0)
+    {
         set_family *R = cover_new(nwords, 1);
         unsigned int buf[nwords];
         pset u = buf;
@@ -52,7 +58,8 @@ static set_family *complement_rec(set_family *F, int nin, int used_mask)
     // case 3: a fully-DC cube exists → empty set
     {
         pset p, last;
-        foreach_set(F, last, p) {
+        foreach_set(F, last, p)
+        {
             int all_dc = 1;
             for (int v = 0; v < nin && all_dc; v++)
                 if (set_get_var(p, v, half) != DC)
@@ -67,12 +74,13 @@ static set_family *complement_rec(set_family *F, int nin, int used_mask)
     pset cl = cl_buf, cr = cr_buf;
     int var = binate_split_select(F, nin, used_mask, nwords, cl, cr);
 
-    if (var < 0) {
+    if (var < 0)
+    {
         return complement_enum(F, nin, used_mask);
     }
 
     // recurse on cofactors
-    set_family *F1 = cover_cofactor(F, var, ONE,  nwords);
+    set_family *F1 = cover_cofactor(F, var, ONE, nwords);
     set_family *F0 = cover_cofactor(F, var, ZERO, nwords);
 
     set_family *L = complement_rec(F1, nin, used_mask | (1 << var));
@@ -89,7 +97,7 @@ static set_family *complement_rec(set_family *F, int nin, int used_mask)
 static set_family *complement_enum(set_family *F, int nin, int used_mask)
 {
     int nwords = F->wsize;
-    int half   = nwords / 2;
+    int half = nwords / 2;
 
     int active_vars = 0;
     for (int v = 0; v < nin; v++)
@@ -99,7 +107,8 @@ static set_family *complement_enum(set_family *F, int nin, int used_mask)
     int total = 1 << active_vars;
     set_family *R = cover_new(nwords, total > 0 ? total : 1);
 
-    for (int i = 0; i < total; i++) {
+    for (int i = 0; i < total; i++)
+    {
         unsigned int buf[nwords];
         pset m = buf;
         set_clear(m, nwords);
@@ -109,8 +118,10 @@ static set_family *complement_enum(set_family *F, int nin, int used_mask)
                 set_set_var_dc(m, v, half);
 
         int bit_idx = 0;
-        for (int v = 0; v < nin; v++) {
-            if (used_mask & (1 << v)) continue;
+        for (int v = 0; v < nin; v++)
+        {
+            if (used_mask & (1 << v))
+                continue;
             if (i & (1 << bit_idx))
                 set_force_var(m, v, ONE, half);
             else
@@ -120,8 +131,10 @@ static set_family *complement_enum(set_family *F, int nin, int used_mask)
 
         int covered = 0;
         pset p, last;
-        foreach_set(F, last, p) {
-            if (set_implies(m, p, nwords)) {
+        foreach_set(F, last, p)
+        {
+            if (set_implies(m, p, nwords))
+            {
                 covered = 1;
                 break;
             }
@@ -146,13 +159,16 @@ static set_family *compl_single_cube(pset p, int nin, int nwords)
 
     set_family *R = cover_new(nwords, nterms > 0 ? nterms : 1);
 
-    if (nterms == 0) {
+    if (nterms == 0)
+    {
         return R;
     }
 
-    for (int v = 0; v < nin; v++) {
+    for (int v = 0; v < nin; v++)
+    {
         int val = set_get_var(p, v, half);
-        if (val == DC) continue;
+        if (val == DC)
+            continue;
 
         unsigned int buf[nwords];
         pset q = buf;
@@ -180,10 +196,13 @@ static set_family *cover_cofactor(set_family *F, int var, int val, int nwords)
     set_family *result = cover_new(nwords, F->count > 0 ? F->count : 1);
 
     pset p, last;
-    foreach_set(F, last, p) {
+    foreach_set(F, last, p)
+    {
         int phase = set_var_phase(p, var, half);
-        if (val == ONE  && !(phase & 1)) continue;
-        if (val == ZERO && !(phase & 2)) continue;
+        if (val == ONE && !(phase & 1))
+            continue;
+        if (val == ZERO && !(phase & 2))
+            continue;
 
         unsigned int buf[nwords];
         set_copy(buf, p, nwords);
@@ -205,26 +224,34 @@ static int binate_split_select(set_family *F, int nin, int used_mask,
 
     set_clear(cl, nwords);
     set_clear(cr, nwords);
-    for (int v = 0; v < nin; v++) {
+    for (int v = 0; v < nin; v++)
+    {
         set_set_var_dc(cl, v, half);
         set_set_var_dc(cr, v, half);
     }
 
-    for (int v = 0; v < nin; v++) {
-        if (used_mask & (1 << v)) continue;
+    for (int v = 0; v < nin; v++)
+    {
+        if (used_mask & (1 << v))
+            continue;
 
         int cnt1 = 0, cnt0 = 0;
         pset p, last;
-        foreach_set(F, last, p) {
+        foreach_set(F, last, p)
+        {
             int ph = set_var_phase(p, v, half);
-            if (ph & 1) cnt1++;
-            if (ph & 2) cnt0++;
+            if (ph & 1)
+                cnt1++;
+            if (ph & 2)
+                cnt0++;
         }
 
-        if (cnt1 == 0 || cnt0 == 0) continue;
+        if (cnt1 == 0 || cnt0 == 0)
+            continue;
 
         int balance = (cnt1 > cnt0) ? (cnt1 - cnt0) : (cnt0 - cnt1);
-        if (balance < best_balance) {
+        if (balance < best_balance)
+        {
             best_balance = balance;
             best_var = v;
         }
@@ -233,11 +260,12 @@ static int binate_split_select(set_family *F, int nin, int used_mask,
     if (best_var < 0)
         return -1;
 
-    for (int v = 0; v < nin; v++) {
+    for (int v = 0; v < nin; v++)
+    {
         set_set_var_dc(cl, v, half);
         set_set_var_dc(cr, v, half);
     }
-    set_force_var(cl, best_var, ONE,  half);
+    set_force_var(cl, best_var, ONE, half);
     set_force_var(cr, best_var, ZERO, half);
 
     return best_var;
@@ -264,17 +292,21 @@ static set_family *compl_merge(set_family *L, set_family *R,
     pset *R1 = malloc((nR + 1) * sizeof(pset));
 
     {
-        int i = 0; pset p, last;
+        int i = 0;
+        pset p, last;
         foreach_set(L, last, p) L1[i++] = p;
         L1[nL] = NULL;
     }
     {
-        int i = 0; pset p, last;
+        int i = 0;
+        pset p, last;
         foreach_set(R, last, p) R1[i++] = p;
         R1[nR] = NULL;
     }
 
-    d1_ctx.var = var; d1_ctx.half = half; d1_ctx.nwords = nwords;
+    d1_ctx.var = var;
+    d1_ctx.half = half;
+    d1_ctx.nwords = nwords;
     qsort(L1, nL, sizeof(pset), d1_compare);
     qsort(R1, nR, sizeof(pset), d1_compare);
 
@@ -287,10 +319,12 @@ static set_family *compl_merge(set_family *L, set_family *R,
 
     // Phase 5: collect results
     set_family *Tbar = cover_new(nwords, nL + nR);
-    for (int i = 0; i < nL; i++) {
+    for (int i = 0; i < nL; i++)
+    {
         cover_add(Tbar, L1[i]);
     }
-    for (int i = 0; i < nR; i++) {
+    for (int i = 0; i < nR; i++)
+    {
         if (!set_empty(R1[i], nwords))
             cover_add(Tbar, R1[i]);
     }
@@ -308,26 +342,32 @@ static int d1_compare(const void *a, const void *b)
 {
     pset pa = *(pset *)a;
     pset pb = *(pset *)b;
-    int var    = d1_ctx.var;
-    int half   = d1_ctx.half;
+    int var = d1_ctx.var;
+    int half = d1_ctx.half;
     int nwords = d1_ctx.nwords;
 
-    for (int i = 0; i < nwords; i++) {
+    for (int i = 0; i < nwords; i++)
+    {
         int hi = var / 16;
         int lo = hi + half;
         int bit = var % 16;
         unsigned int mask = ~(1u << bit);
 
         unsigned int va, vb;
-        if (i == hi || i == lo) {
+        if (i == hi || i == lo)
+        {
             va = pa[i] & mask;
             vb = pb[i] & mask;
-        } else {
+        }
+        else
+        {
             va = pa[i];
             vb = pb[i];
         }
-        if (va < vb) return -1;
-        if (va > vb) return 1;
+        if (va < vb)
+            return -1;
+        if (va > vb)
+            return 1;
     }
     return 0;
 }
@@ -336,34 +376,47 @@ static void compl_d1merge(pset *L1, int nL, pset *R1, int nR,
                           int var, int half, int nwords)
 {
     int i = 0, j = 0;
-    while (i < nL && j < nR) {
+    while (i < nL && j < nR)
+    {
         pset pl = L1[i], pr = R1[j];
 
         int cmp = 0;
         {
             int hi = var / 16, lo = hi + half, bit = var % 16;
             unsigned int mask = ~(1u << bit);
-            for (int k = 0; k < nwords && cmp == 0; k++) {
+            for (int k = 0; k < nwords && cmp == 0; k++)
+            {
                 unsigned int va, vb;
-                if (k == hi || k == lo) {
+                if (k == hi || k == lo)
+                {
                     va = pl[k] & mask;
                     vb = pr[k] & mask;
-                } else {
+                }
+                else
+                {
                     va = pl[k];
                     vb = pr[k];
                 }
-                if (va < vb) cmp = -1;
-                else if (va > vb) cmp = 1;
+                if (va < vb)
+                    cmp = -1;
+                else if (va > vb)
+                    cmp = 1;
             }
         }
 
-        if (cmp == 0) {
+        if (cmp == 0)
+        {
             set_set_var_dc(pl, var, half);
             set_clear(pr, nwords);
-            i++; j++;
-        } else if (cmp < 0) {
             i++;
-        } else {
+            j++;
+        }
+        else if (cmp < 0)
+        {
+            i++;
+        }
+        else
+        {
             j++;
         }
     }
@@ -374,9 +427,11 @@ static void compl_d1merge(pset *L1, int nL, pset *R1, int nR,
 static void compl_lift(pset *A1, int nA, set_family *B,
                        pset bcube, int var, int half, int nwords)
 {
-    for (int i = 0; i < nA; i++) {
+    for (int i = 0; i < nA; i++)
+    {
         pset a = A1[i];
-        if (set_empty(a, nwords)) continue;
+        if (set_empty(a, nwords))
+            continue;
 
         unsigned int lift_buf[nwords];
         pset lift = lift_buf;
@@ -389,8 +444,10 @@ static void compl_lift(pset *A1, int nA, set_family *B,
             set_force_var(lift, var, ZERO, half);
 
         pset q, last;
-        foreach_set(B, last, q) {
-            if (set_implies(lift, q, nwords)) {
+        foreach_set(B, last, q)
+        {
+            if (set_implies(lift, q, nwords))
+            {
                 set_set_var_dc(a, var, half);
                 break;
             }
