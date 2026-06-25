@@ -7,7 +7,8 @@ typedef struct
 {
     int nin;  // number of inputs
     int nout; // number of outputs
-    set_family *cover;
+    set_family *cover;  // ON-set
+    set_family *dc;     // don't-care set (NULL if none)
 } pla_t;
 
 pla_t *pla_read(const char *filename);

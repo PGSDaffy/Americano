@@ -31,7 +31,8 @@ static void print_minterm(pset m, int nvars, int half)
     }
 }
 
-int verify_equiv(set_family *F_old, set_family *F_new, int nin, int nout)
+int verify_equiv(set_family *F_old, set_family *F_new, set_family *D,
+                 int nin, int nout)
 {
     int nwords = F_old->wsize;
     int half = nwords / 2;
@@ -51,6 +52,18 @@ int verify_equiv(set_family *F_old, set_family *F_new, int nin, int nout)
                 m[hi] |= (1u << bit);
             else
                 m[lo] |= (1u << bit);
+        }
+
+        // skip minterms in the DC-set
+        if (D)
+        {
+            int in_dc = 0;
+            pset p, last;
+            foreach_set(D, last, p)
+            {
+                if (set_implies(m, p, nwords)) { in_dc = 1; break; }
+            }
+            if (in_dc) continue;
         }
 
         for (int o = 0; o < nout; o++)

@@ -77,17 +77,21 @@ pla_t *pla_read(const char *filename)
     }
 
     char line[MAX_LINE];
-    int nin = 0, nout = 0, nterms = 0;
+    int nin = 0, nout = 0, n_on = 0, n_dc = 0, in_dc = 0;
 
-    // first pass: get .i and .o
+    // first pass: get .i .o and count ON / DC terms separately
     while (next_line(f, line, MAX_LINE))
     {
         if (line[0] == '.' && line[1] == 'i')
             nin = atoi(line + 2);
         else if (line[0] == '.' && line[1] == 'o')
             nout = atoi(line + 2);
+        else if (line[0] == '.' && line[1] == 'd')
+            in_dc = 1;
         else if (line[0] != '.')
-            nterms++;
+        {
+            if (in_dc) n_dc++; else n_on++;
+        }
     }
 
     if (nin == 0 || nout == 0)
@@ -104,18 +108,26 @@ pla_t *pla_read(const char *filename)
     pla_t *pla = malloc(sizeof(pla_t));
     pla->nin = nin;
     pla->nout = nout;
-    pla->cover = cover_new(nwords, nterms > 0 ? nterms : 4);
+    pla->cover = cover_new(nwords, n_on > 0 ? n_on : 4);
+    pla->dc    = n_dc > 0 ? cover_new(nwords, n_dc) : NULL;
 
-    // second pass: read data lines
+    // second pass: read ON-set and DC-set separately
     rewind(f);
+    in_dc = 0;
     while (next_line(f, line, MAX_LINE))
     {
         if (line[0] == '.')
+        {
+            if (line[1] == 'd') in_dc = 1;
             continue;
+        }
 
         unsigned int buf[nwords];
         parse_term(line, buf, nin, nout, half);
-        cover_add(pla->cover, buf);
+        if (in_dc)
+            cover_add(pla->dc, buf);
+        else
+            cover_add(pla->cover, buf);
     }
 
     fclose(f);
@@ -125,5 +137,6 @@ pla_t *pla_read(const char *filename)
 void pla_free(pla_t *p)
 {
     cover_free(p->cover);
+    if (p->dc) cover_free(p->dc);
     free(p);
 }

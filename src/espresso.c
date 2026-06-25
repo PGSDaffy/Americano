@@ -4,8 +4,13 @@
 #include <time.h>
 
 static int trace_on = 0;
+static int verbose_on = 0;
 
 void espresso_set_trace(int on) { trace_on = on; }
+void espresso_set_verbose(int on) { verbose_on = on; }
+
+// forward decls
+static void cover_append(set_family *dst, set_family *src);
 
 // expand each cube as much as possible without touching the OFF-set
 set_family *expand(set_family *F, set_family *R, int nin)
@@ -321,10 +326,15 @@ set_family *reduce(set_family *F, set_family *R, int nin)
     return result;
 }
 
-set_family *espresso_minimize(set_family *F, int nin, int nout)
+set_family *espresso_minimize(set_family *F, set_family *D, int nin, int nout)
 {
     clock_t t0 = clock();
-    set_family *R = complement(F, nin);
+
+    // build F ∪ D so the Shannon complement gives the true OFF-set
+    set_family *FD = cover_dup(F);
+    if (D) cover_append(FD, D);
+    set_family *R = complement(FD, nin);
+    cover_free(FD);
     (void)nout;
 
     if (trace_on)
@@ -340,19 +350,28 @@ set_family *espresso_minimize(set_family *F, int nin, int nout)
         clock_t t1 = clock();
 
         set_family *tmp;
+        int c0, c1, c2;
+
+        c0 = best->count;
         tmp = expand(best, R, nin);
         cover_free(best);
         best = tmp;
+        c1 = best->count;
 
         tmp = irredundant(best, R, nin);
         cover_free(best);
         best = tmp;
+        c2 = best->count;
 
         tmp = reduce(best, R, nin);
         cover_free(best);
         best = tmp;
 
         iterations++;
+
+        if (verbose_on)
+            fprintf(stderr, "# iter %d: expand %d->%d  irredundant %d->%d  reduce %d->%d\n",
+                    iter + 1, c0, c1, c1, c2, c2, best->count);
 
         if (trace_on)
             fprintf(stderr, "# ITER %d      Time was %.2f ms, cost is c=%d\n",
@@ -397,8 +416,8 @@ static set_family *irredundant_simple(set_family *F)
     return r;
 }
 
-// brute-force OFF-set: enumerate all minterms not covered by F
-static set_family *compute_off_set_bf(set_family *F, int nin)
+// brute-force OFF-set: enumerate all minterms not covered by F or D
+static set_family *compute_off_set_bf(set_family *F, set_family *D, int nin)
 {
     int half = (nin + 15) / 16, nwords = half * 2, total = 1 << nin;
     set_family *R = cover_new(nwords, total);
@@ -419,10 +438,13 @@ static set_family *compute_off_set_bf(set_family *F, int nin)
         pset p, last;
         foreach_set(F, last, p)
         {
-            if (set_implies(m, p, nwords))
+            if (set_implies(m, p, nwords)) { covered = 1; break; }
+        }
+        if (!covered && D)
+        {
+            foreach_set(D, last, p)
             {
-                covered = 1;
-                break;
+                if (set_implies(m, p, nwords)) { covered = 1; break; }
             }
         }
         if (!covered)
@@ -432,10 +454,10 @@ static set_family *compute_off_set_bf(set_family *F, int nin)
 }
 
 // small-problem path: brute-force OFF-set + simple irredundant
-static set_family *espresso_minimize_small(set_family *F, int nin)
+static set_family *espresso_minimize_small(set_family *F, set_family *D, int nin)
 {
     clock_t t0 = clock();
-    set_family *R = compute_off_set_bf(F, nin);
+    set_family *R = compute_off_set_bf(F, D, nin);
     if (trace_on)
         fprintf(stderr, "# OFF-SET     Time was %.2f ms, cost is c=%d\n",
                 (double)(clock() - t0) / CLOCKS_PER_SEC * 1000, F->count);
@@ -486,10 +508,14 @@ static set_family *espresso_minimize_small(set_family *F, int nin)
         }
         cover_free(best);
         best = E;
+        int c_expand = best->count;
         set_family *t = irredundant_simple(best);
         cover_free(best);
         best = t;
         iterations++;
+        if (verbose_on)
+            fprintf(stderr, "# iter %d: expand %d->%d  irredundant %d->%d\n",
+                    iterations, last_count, c_expand, c_expand, best->count);
         if (trace_on)
             fprintf(stderr, "# ITER %d      Time was %.2f ms, cost is c=%d\n",
                     iter + 1, (double)(clock() - t1) / CLOCKS_PER_SEC * 1000, best->count);
@@ -507,11 +533,11 @@ static set_family *espresso_minimize_small(set_family *F, int nin)
 }
 
 // auto-select: ≤8 inputs & single output → small path, else multi-output
-set_family *espresso_minimize_auto(set_family *F, int nin, int nout)
+set_family *espresso_minimize_auto(set_family *F, set_family *D, int nin, int nout)
 {
     if (nin <= 8 && nout == 1)
-        return espresso_minimize_small(F, nin);
-    return espresso_minimize_multi(F, nin, nout);
+        return espresso_minimize_small(F, D, nin);
+    return espresso_minimize_multi(F, D, nin, nout);
 }
 
 // multi-output: minimize each output independently, then merge.
@@ -566,32 +592,49 @@ static void cover_append(set_family *dst, set_family *src)
         cover_add(dst, p);
 }
 
-set_family *espresso_minimize_multi(set_family *F, int nin, int nout)
+set_family *espresso_minimize_multi(set_family *F, set_family *D, int nin, int nout)
 {
     int nwords = F->wsize;
 
-    /* result will hold merged minimized covers from all outputs */
     set_family *merged = cover_new(nwords, F->count > 0 ? F->count : 1);
     merged->count = 0;
 
     for (int o = 0; o < nout; o++)
     {
+        if (verbose_on)
+            fprintf(stderr, "# output %d/%d\n", o, nout);
+
         set_family *on_set = extract_output_on(F, o, nin, nout);
+
+        // merge DC cubes for this output into the ON-set
+        if (D)
+        {
+            pset p, last;
+            foreach_set(D, last, p)
+            {
+                if (!set_has_output(p, o, nin))
+                    continue;
+                unsigned int buf[128];
+                set_copy(buf, p, nwords);
+                for (int x = 0; x < nout; x++)
+                {
+                    int xhi = (nin + x) / 16, xbit = (nin + x) % 16;
+                    buf[xhi] &= ~(1u << xbit);
+                }
+                cover_add(on_set, buf);
+            }
+        }
+
         if (on_set->count == 0)
         {
-            /* output is constant 0 — no ON-set cubes */
             cover_free(on_set);
             continue;
         }
 
-        /* minimize this single-output function */
-        set_family *minimized = espresso_minimize(on_set, nin, 1);
+        set_family *minimized = espresso_minimize(on_set, NULL, nin, 1);
         cover_free(on_set);
 
-        /* restore the output bit */
         cover_set_output(minimized, o, nin);
-
-        /* merge into final result */
         cover_append(merged, minimized);
         cover_free(minimized);
     }
